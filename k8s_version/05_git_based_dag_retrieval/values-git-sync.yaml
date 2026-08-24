@@ -1,5 +1,9 @@
 # Overlay values for Airflow Helm chart DAG git-sync
-# Use with: -f ../01_install/values-airflow.yaml -f values-git-sync.yaml
+# Use with:
+#   helm upgrade --install airflow apache-airflow/airflow \
+#     -n airflow \
+#     -f 01_install/values-airflow.yaml \
+#     -f 05_git_based_dag_retrieval/values-git-sync.yaml
 
 dags:
   persistence:
@@ -7,14 +11,22 @@ dags:
 
   gitSync:
     enabled: true
-    repo: https://github.com/<org>/<dag-repo>.git
+    repo: https://github.com/DecseiD/airflow-workshop.git
     branch: main
     rev: HEAD
     depth: 1
-    subPath: dags
-    syncWait: 30
+    wait: 30 # Sync interval in seconds (checks repo for changes every 30s)
 
-    # For private repos, configure one auth path:
+    # CRITICAL: subPath defines the relative directory within the git repo where .py DAGs reside.
+    # If subPath is empty (""), Airflow will look in the root of the cloned repo.
+    # When your DAGs are nested in a subfolder, set subPath accordingly:
+    subPath: "airflow/k8s_version/05_git_based_dag_retrieval/dags"
+
+    # Alternative subPath examples depending on repo root structure:
+    # subPath: "05_git_based_dag_retrieval/dags"
+    # subPath: "dags"
+
+    # For private repos, configure authentication secret:
     # credentialsSecret: airflow-git-https
     # sshKeySecret: airflow-git-ssh
     # knownHosts: |

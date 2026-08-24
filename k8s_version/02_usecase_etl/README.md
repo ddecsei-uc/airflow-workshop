@@ -1,17 +1,16 @@
 # 02_usecase_etl — IoT ETL on AKS
 
-Deploy PostgreSQL telemetry DB, Flask API, and dashboard into AKS.
+Deploy PostgreSQL telemetry DB, Flask API, and live dashboard into AKS.
+
+---
 
 ## 1) Images
 
-Current manifests are using prebuilt images:
+Current manifests use prebuilt container images:
 - API: `cheesecakeslice/airflow-workshop:v1.0`
 - Dashboard: `cheesecakeslice/airflow-dashboard:latest`
 
-If you want to use your own images, build/push first and then update image fields in:
-- `k8s/iot-api-deployment.yaml`
-- `k8s/dashboard-deployment.yaml`
-
+If you want to build and push your own container images:
 ```bash
 # API image
 docker build -t <registry>/iot-api:latest ./api
@@ -22,7 +21,11 @@ docker build -t <registry>/airflow-dashboard:latest ./dashboard
 docker push <registry>/airflow-dashboard:latest
 ```
 
-## 2) Apply manifests
+---
+
+## 2) Apply Kubernetes Manifests
+
+Apply the PostgreSQL database, API backend, and dashboard into the `airflow` namespace:
 
 ```bash
 kubectl apply -n airflow -f k8s/postgres-configmap.yaml
@@ -36,47 +39,41 @@ kubectl apply -n airflow -f k8s/dashboard-deployment.yaml
 kubectl apply -n airflow -f k8s/dashboard-service.yaml
 ```
 
-Optional (only if you explicitly want host-based ingress):
+*(Optional: `kubectl apply -n airflow -f k8s/ingress.yaml` if you explicitly configured ingress).*
 
-```bash
-kubectl apply -n airflow -f k8s/ingress.yaml
-```
+---
 
-## 3) Workshop demo access (port-forward, recommended)
+## 3) Workshop Demo Access (Port-Forward, Recommended)
 
-For workshop reliability, use local port-forward instead of host-based ingress.
+For maximum reliability during workshops, access the dashboard and API via `kubectl port-forward`:
 
-In two terminals:
-
+In two separate terminals:
 ```bash
 kubectl port-forward -n airflow svc/airflow-dashboard 8081:80
 kubectl port-forward -n airflow svc/iot-api 5000:5000
 ```
 
-Open dashboard with explicit API override:
+Open the dashboard with the explicit API override parameter:
+👉 **`http://localhost:8081/?api=http://localhost:5000`**
 
-```text
-http://localhost:8081/?api=http://localhost:5000
-```
+---
 
-This avoids DNS/domain/ingress-controller dependencies during the demo.
+## 4) DAG Deployment (Via Module 05 Git-Sync)
 
-### Optional ingress mode (not needed for workshop flow)
+Both DAGs (`iot_telemetry_etl` and `manual_sensor_maintenance_classifier`) reside in **`05_git_based_dag_retrieval/dags/`**.
 
-Only use this if you intentionally want host-based URLs. Otherwise skip ingress completely.
+When Module 05 is applied via Helm overlay (`values-git-sync.yaml`), `git-sync` automatically delivers these DAGs into `/opt/airflow/dags` across all Airflow pods.
 
-## 4) Deploy DAG to Airflow
-
-Option A (recommended): keep `dags/minimal_etl.py` in your DAG source repo and let your sync mechanism (for example, Module 05 git-sync) deliver it.
-
-Option B: direct copy for lab demo:
-
+*(For quick local testing without git-sync, you can copy directly to the scheduler:)*
 ```bash
 SCHED=$(kubectl get pod -n airflow -l component=scheduler -o jsonpath='{.items[0].metadata.name}')
-kubectl cp dags/minimal_etl.py airflow/$SCHED:/opt/airflow/dags/minimal_etl.py
+kubectl cp ../05_git_based_dag_retrieval/dags/minimal_etl.py airflow/$SCHED:/opt/airflow/dags/minimal_etl.py
+kubectl cp ../05_git_based_dag_retrieval/dags/manual_sensor_cleaning_dag.py airflow/$SCHED:/opt/airflow/dags/manual_sensor_cleaning_dag.py
 ```
 
-## 5) Verify workloads + endpoints
+---
+
+## 5) Verify Workloads & API Health
 
 ```bash
 kubectl get pods -n airflow
@@ -84,46 +81,38 @@ kubectl get svc -n airflow
 curl -sS http://localhost:5000/api/health
 ```
 
-Expected:
-- API health returns `{"status":"ok"}`
-- Dashboard reachable with API override at `http://localhost:8081/?api=http://localhost:5000`
+Expected output:
+```json
+{"status":"ok"}
+```
 
-## 6) Insert sample data
+---
 
-`add_sensor_data.py` is configured for local DB access (`localhost:5433`), so port-forward Postgres first:
+## 6) Insert Live Sensor Data (`add_sensor_data.py`)
+
+Port-forward PostgreSQL locally and run the data generator:
 
 ```bash
 kubectl port-forward -n airflow svc/iot-telemetry-db 5433:5432
+```
+
+In a second terminal:
+```bash
+# Insert normal batch
+python add_sensor_data.py
+
+# Insert anomalous overheat readings (>75°C / >85°C)
 python add_sensor_data.py --anomaly
+
+# Reset database to initial seed state
+python add_sensor_data.py --reset
 ```
 
-## 7) Run demo flow
+---
 
-1. Trigger DAG `iot_telemetry_etl` in Airflow UI.
-2. Open dashboard: `http://localhost:8081/?api=http://localhost:5000`
-3. Validate raw/metrics/alerts panels update.
+## 7) Run the Live Showcase
 
-## 8) Troubleshooting notes from working AKS run
-
-### A) Dashboard shows `API unavailable`
-
-Root cause in this module: dashboard JS defaults API base to:
-
-```text
-${window.location.protocol}//${window.location.hostname}:5000
-```
-
-In workshop mode, always open with explicit override:
-- `http://localhost:8081/?api=http://localhost:5000`
-
-(Only for optional ingress mode, use host-based override values.)
-
-### B) Pods healthy but URLs fail
-
-For workshop mode, verify both port-forwards are running (`8081->dashboard`, `5000->iot-api`).
-
-### C) Data does not appear after API is healthy
-
-Run data insert + DAG trigger again:
-- `python add_sensor_data.py --anomaly`
-- Trigger `iot_telemetry_etl`
+1. Insert anomalous data: `python add_sensor_data.py --anomaly`
+2. Open Dashboard: `http://localhost:8081/?api=http://localhost:5000` (shows raw un-processed readings with `✗ no`).
+3. Trigger DAG `iot_telemetry_etl` in Airflow UI → Metrics & Alerts panels populate live, raw rows turn to `✓ yes`.
+4. Trigger DAG `manual_sensor_maintenance_classifier` in Airflow UI → Maintenance Queue panel populates with prioritized tickets.

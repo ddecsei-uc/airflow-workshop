@@ -50,11 +50,11 @@ Expected:
 Configure your Entra app redirect URI to:
 
 ```text
-https://<airflow-host>/oauth-authorized
+http://localhost:8080/oauth-authorized
 ```
 
 Examples:
-- `http://<loadbalancer-external-ip>:8080/oauth-authorized` (recommended for this workshop)
+- `http://<loadbalancer-external-ip>:8080/oauth-authorized`
 
 This follows the official FAB SSO guide for Airflow provider auth manager.
 
