@@ -58,17 +58,17 @@ Open the dashboard with the explicit API override parameter:
 
 ---
 
-## 4) DAG Deployment (Via Module 05 Git-Sync)
+## 4) DAG Deployment (Via Module 03 Git-Sync)
 
-Both DAGs (`iot_telemetry_etl` and `manual_sensor_maintenance_classifier`) reside in **`05_git_based_dag_retrieval/dags/`**.
+Both DAGs (`iot_telemetry_etl` and `manual_sensor_maintenance_classifier`) reside in **`03_git_based_dag_retrieval/dags/`**.
 
-When Module 05 is applied via Helm overlay (`values-git-sync.yaml`), `git-sync` automatically delivers these DAGs into `/opt/airflow/dags` across all Airflow pods.
+When Module 03 is applied via Helm overlay (`values-git-sync.yaml`), `git-sync` automatically delivers these DAGs into `/opt/airflow/dags` across all Airflow pods.
 
 *(For quick local testing without git-sync, you can copy directly to the scheduler:)*
 ```bash
 SCHED=$(kubectl get pod -n airflow -l component=scheduler -o jsonpath='{.items[0].metadata.name}')
-kubectl cp ../05_git_based_dag_retrieval/dags/minimal_etl.py airflow/$SCHED:/opt/airflow/dags/minimal_etl.py
-kubectl cp ../05_git_based_dag_retrieval/dags/manual_sensor_cleaning_dag.py airflow/$SCHED:/opt/airflow/dags/manual_sensor_cleaning_dag.py
+kubectl cp ../03_git_based_dag_retrieval/dags/minimal_etl.py airflow/$SCHED:/opt/airflow/dags/minimal_etl.py
+kubectl cp ../03_git_based_dag_retrieval/dags/manual_sensor_cleaning_dag.py airflow/$SCHED:/opt/airflow/dags/manual_sensor_cleaning_dag.py
 ```
 
 ---

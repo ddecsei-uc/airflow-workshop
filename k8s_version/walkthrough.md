@@ -9,11 +9,11 @@ This runbook provides the step-by-step verification commands, architectural deep
 1. [Cluster Context & Namespace Verification](#1-cluster-context--namespace-verification)
 2. [Module 01: Airflow Deployment & Ingress Checks](#2-module-01-airflow-deployment--ingress-checks)
 3. [Module 02: IoT Telemetry Workload Checks](#3-module-02-iot-telemetry-workload-checks)
-4. [Module 05: Git-Sync Automated DAG Retrieval Checks](#4-module-05-git-sync-automated-dag-retrieval-checks)
+4. [Module 03: Git-Sync Automated DAG Retrieval Checks](#4-module-03-git-sync-automated-dag-retrieval-checks)
 5. [End-to-End Live Workshop Showcase](#5-end-to-end-live-workshop-showcase)
 6. [Deep Dive 1: Where Airflow Pods Read DAGs (`/opt/airflow/dags`)](#6-deep-dive-1-where-airflow-pods-read-dags-optairflowdags)
 7. [Deep Dive 2: Azure Entra ID SSO & Dynamic Role Assignment](#7-deep-dive-2-azure-entra-id-sso--dynamic-role-assignment)
-8. [Deep Dive 3: Module 05 Troubleshooting Guide (Why DAGs Were Missing)](#8-deep-dive-3-module-05-troubleshooting-guide-why-dags-were-missing)
+8. [Deep Dive 3: Module 03 Troubleshooting Guide (Why DAGs Were Missing)](#8-deep-dive-3-module-03-troubleshooting-guide-why-dags-were-missing)
 
 ---
 
@@ -80,14 +80,14 @@ curl -sS http://localhost:5000/api/stats
 
 ---
 
-## 4. Module 05: Git-Sync Automated DAG Retrieval Checks
+## 4. Module 03: Git-Sync Automated DAG Retrieval Checks
 
 Deploy the Git-Sync overlay to enable automatic DAG synchronization:
 ```bash
 helm upgrade --install airflow apache-airflow/airflow \
   -n airflow \
   -f 01_install/values-airflow.yaml \
-  -f 05_git_based_dag_retrieval/values-git-sync.yaml
+  -f 03_git_based_dag_retrieval/values-git-sync.yaml
 ```
 
 Verify git-sync sidecar container operations:
@@ -140,7 +140,7 @@ When `dags.gitSync.enabled: true` is enabled in Helm:
    ```yaml
    dags:
      gitSync:
-       subPath: "airflow/k8s_version/05_git_based_dag_retrieval/dags"
+       subPath: "airflow/k8s_version/03_git_based_dag_retrieval/dags"
    ```
    Kubernetes volume mounts **only that specific subdirectory** directly into `/opt/airflow/dags` in the Airflow container.
 4. **Airflow Architecture Note:** In Airflow 2.x+, the **Scheduler** reads `/opt/airflow/dags`, compiles the DAG Python code, and writes the serialized representation into the metadata database (`serialized_dag` table). The **Webserver** reads DAG structures directly from the database, ensuring high UI responsiveness without local code execution risks.
@@ -220,9 +220,9 @@ Whenever a user logs in, FAB checks the `roles` (or `groups`) array in the Azure
 
 ---
 
-## 8. Deep Dive 3: Module 05 Troubleshooting Guide (Why DAGs Were Missing)
+## 8. Deep Dive 3: Module 03 Troubleshooting Guide (Why DAGs Were Missing)
 
-If Module 05 is deployed but DAGs do not appear in the Airflow UI or CLI, follow this diagnostic checklist:
+If Module 03 is deployed but DAGs do not appear in the Airflow UI or CLI, follow this diagnostic checklist:
 
 ```text
                                 Diagnostic Checklist

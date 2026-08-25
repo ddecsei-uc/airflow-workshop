@@ -3,7 +3,7 @@
 #   helm upgrade --install airflow apache-airflow/airflow \
 #     -n airflow \
 #     -f 01_install/values-airflow.yaml \
-#     -f 05_git_based_dag_retrieval/values-git-sync.yaml
+#     -f 03_git_based_dag_retrieval/values-git-sync.yaml
 
 dags:
   persistence:
@@ -20,10 +20,10 @@ dags:
     # CRITICAL: subPath defines the relative directory within the git repo where .py DAGs reside.
     # If subPath is empty (""), Airflow will look in the root of the cloned repo.
     # When your DAGs are nested in a subfolder, set subPath accordingly:
-    subPath: "airflow/k8s_version/05_git_based_dag_retrieval/dags"
+    subPath: "airflow/k8s_version/03_git_based_dag_retrieval/dags"
 
     # Alternative subPath examples depending on repo root structure:
-    # subPath: "05_git_based_dag_retrieval/dags"
+    # subPath: "03_git_based_dag_retrieval/dags"
     # subPath: "dags"
 
     # For private repos, configure authentication secret:

@@ -11,7 +11,7 @@ It maintains the same learning structure and IoT ETL logic, while taking advanta
 
 - **[`01_install/`](file:///C:/Users/David/Downloads/homeLab/airflow/k8s_version/01_install/README.md)** — Airflow on AKS via Helm Chart + Azure Entra ID SSO configuration
 - **[`02_usecase_etl/`](file:///C:/Users/David/Downloads/homeLab/airflow/k8s_version/02_usecase_etl/README.md)** — IoT Telemetry DB, Flask API, and real-time Before vs. After Dashboard
-- **[`05_git_based_dag_retrieval/`](file:///C:/Users/David/Downloads/homeLab/airflow/k8s_version/05_git_based_dag_retrieval/README.md)** — Git-based automatic DAG synchronization (`git-sync`), containing all workshop DAGs:
+- **[`03_git_based_dag_retrieval/`](file:///C:/Users/David/Downloads/homeLab/airflow/k8s_version/03_git_based_dag_retrieval/README.md)** — Git-based automatic DAG synchronization (`git-sync`), containing all workshop DAGs:
   - `minimal_etl.py` (`iot_telemetry_etl`)
   - `manual_sensor_cleaning_dag.py` (`manual_sensor_maintenance_classifier`)
 - **[`walkthrough.md`](file:///C:/Users/David/Downloads/homeLab/airflow/k8s_version/walkthrough.md)** — Master execution log, DAG pod paths, Azure Entra ID dynamic RBAC deep dive, and troubleshooting guide
@@ -31,12 +31,12 @@ It maintains the same learning structure and IoT ETL logic, while taking advanta
    ```bash
    kubectl apply -n airflow -f 02_usecase_etl/k8s/
    ```
-4. **Enable Git-Sync DAG Retrieval (Module 05):**
+4. **Enable Git-Sync DAG Retrieval (Module 03):**
    ```bash
    helm upgrade --install airflow apache-airflow/airflow \
      -n airflow \
      -f 01_install/values-airflow.yaml \
-     -f 05_git_based_dag_retrieval/values-git-sync.yaml
+     -f 03_git_based_dag_retrieval/values-git-sync.yaml
    ```
 5. **Run the Live Workshop Demo:**
    - Port-forward Dashboard & API:

@@ -1,4 +1,4 @@
-# 05_git_based_dag_retrieval — Git-Based DAG Retrieval on AKS (git-sync)
+# 03_git_based_dag_retrieval — Git-Based DAG Retrieval on AKS (git-sync)
 
 This module configures **automatic DAG synchronization** into Airflow pods running on AKS using the native `git-sync` sidecar pattern from the official Apache Airflow Helm chart.
 
@@ -6,7 +6,7 @@ This module configures **automatic DAG synchronization** into Airflow pods runni
 
 ## 🎯 What This Module Contains
 
-All DAGs for the AKS workshop are maintained inside `05_git_based_dag_retrieval/dags/`:
+All DAGs for the AKS workshop are maintained inside `03_git_based_dag_retrieval/dags/`:
 1. **`minimal_etl.py`** (`iot_telemetry_etl`): The hourly TaskFlow ETL pipeline processing sensor readings, computing aggregations into `daily_sensor_metrics`, and flagging >75°C threshold violations into `sensor_alerts`.
 2. **`manual_sensor_cleaning_dag.py`** (`manual_sensor_maintenance_classifier`): The on-demand maintenance classification pipeline scoring device temperatures and dispatching action tickets into `sensor_maintenance_queue`.
 
@@ -45,10 +45,10 @@ Run Helm upgrade applying the base values and the git-sync overlay:
 helm upgrade --install airflow apache-airflow/airflow \
   -n airflow \
   -f 01_install/values-airflow.yaml \
-  -f 05_git_based_dag_retrieval/values-git-sync.yaml
+  -f 03_git_based_dag_retrieval/values-git-sync.yaml
 ```
 
-*(If running from within `05_git_based_dag_retrieval/`, use `-f ../01_install/values-airflow.yaml -f values-git-sync.yaml`)*
+*(If running from within `03_git_based_dag_retrieval/`, use `-f ../01_install/values-airflow.yaml -f values-git-sync.yaml`)*
 
 ---
 
@@ -105,15 +105,15 @@ manual_sensor_maintenance_classifier | /opt/airflow/dags/manual_...  | airflow |
 
 ## 🛠️ Why Were DAGs Missing? (Root Cause & Fix)
 
-If you deployed Module 05 and no DAGs appeared in the UI or CLI, the most common causes and fixes are:
+If you deployed Module 03 and no DAGs appeared in the UI or CLI, the most common causes and fixes are:
 
 ### Root Cause 1: Missing or Incorrect `subPath` in Helm Values (Most Common)
-- **Problem:** If `dags.gitSync.subPath` is empty (`""`), `git-sync` clones the repository root into `/opt/airflow/dags`. If your DAG `.py` files reside in a subfolder (such as `airflow/k8s_version/05_git_based_dag_retrieval/dags`), Airflow scans only the root directory, finding zero DAGs.
+- **Problem:** If `dags.gitSync.subPath` is empty (`""`), `git-sync` clones the repository root into `/opt/airflow/dags`. If your DAG `.py` files reside in a subfolder (such as `airflow/k8s_version/03_git_based_dag_retrieval/dags`), Airflow scans only the root directory, finding zero DAGs.
 - **Fix:** In `values-git-sync.yaml`, ensure `subPath` points exactly to the directory holding your DAG files:
   ```yaml
-  subPath: "airflow/k8s_version/05_git_based_dag_retrieval/dags"
+  subPath: "airflow/k8s_version/03_git_based_dag_retrieval/dags"
   ```
-  *(Or `"05_git_based_dag_retrieval/dags"` if your repo root begins at the workshop folder level).*
+  *(Or `"03_git_based_dag_retrieval/dags"` if your repo root begins at the workshop folder level).*
 
 ### Root Cause 2: Git-Sync Clone Authentication / Network Failure
 - **Problem:** The `git-sync` sidecar is failing to pull from the remote repository (e.g. private repo without SSH secret, wrong branch name, rate limit).

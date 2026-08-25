@@ -13,7 +13,7 @@ All workshop services run on your local lab host.
 
 | Service | Access URL / Connection | Credentials | Role in Workshop |
 | :--- | :--- | :--- | :--- |
-| **Before vs After ETL Dashboard** | 👉 **[http://localhost:3001](http://localhost:3001)** | N/A | Main showcase for raw vs transformed data |
+| **Before vs After ETL Dashboard** | **[http://localhost:3001](http://localhost:3001)** | N/A | Main showcase for raw vs transformed data |
 | **Apache Airflow Web UI** | **[http://localhost:8080](http://localhost:8080)** | `admin` / `admin` | DAG operations, task state transitions, and logs |
 | **IoT Target Database** | **`localhost:5433`** | `iot_user` / `iot_password` | PostgreSQL target DB (`iot_telemetry`) |
 | **Host Shell** | `ssh <user>@<HOST_IP>` (optional if remote host) | SSH key or local console | Presenter terminal for container and CLI commands |
@@ -48,7 +48,7 @@ All workshop services run on your local lab host.
 ### Phase 3: Before/After ETL Outcome (Minutes 30–45)
 - **Goal:** Visually prove ETL business value.
 - **Module Document:** [`02_usecase_etl/dashboard/index.html`](./02_usecase_etl/dashboard/index.html)
-- **Live Demo URL:** 👉 **[http://localhost:3001](http://localhost:3001)**
+- **Live Demo URL:** **[http://localhost:3001](http://localhost:3001)**
 - **Talking Points:**
   1. Show raw/unprocessed telemetry first.
   2. Trigger `iot_telemetry_etl`, then refresh dashboard.
