@@ -1,102 +1,73 @@
-# Master Walkthrough & Technical Reference (AKS / Kubernetes)
+# Walkthrough (AKS) — Current Working Workshop Path
 
-This runbook provides the step-by-step verification commands, architectural deep dives, and troubleshooting procedures for running the Apache Airflow workshop on Azure Kubernetes Service (AKS).
-
----
-
-## 📋 Table of Contents
-
-1. [Cluster Context & Namespace Verification](#1-cluster-context--namespace-verification)
-2. [Module 01: Airflow Deployment & Remote Logging Setup](#2-module-01-airflow-deployment--remote-logging-setup)
-3. [Module 02: IoT Telemetry Workload Checks](#3-module-02-iot-telemetry-workload-checks)
-4. [Module 03: Git-Sync Automated DAG Retrieval Checks](#4-module-03-git-sync-automated-dag-retrieval-checks)
-5. [End-to-End Live Workshop Showcase](#5-end-to-end-live-workshop-showcase)
-6. [Deep Dive 1: Where Airflow Pods Read DAGs (`/opt/airflow/dags`)](#6-deep-dive-1-where-airflow-pods-read-dags-optairflowdags)
-7. [Deep Dive 2: Azure Entra ID SSO & Dynamic Role Assignment](#7-deep-dive-2-azure-entra-id-sso--dynamic-role-assignment)
-8. [Deep Dive 3: Module 03 Troubleshooting Guide (Why DAGs Were Missing)](#8-deep-dive-3-module-03-troubleshooting-guide-why-dags-were-missing)
-9. [Deep Dive 4: Persistent Remote Logging with Azure Blob Storage (WASB)](#9-deep-dive-4-persistent-remote-logging-with-azure-blob-storage-wasb)
-
----
-
-## 1. Cluster Context & Namespace Verification
+## 1) Context + namespace
 
 ```bash
-# Verify current Kubernetes cluster context
 kubectl config current-context
-
-# Ensure namespace exists
 kubectl get ns airflow
 ```
 
----
+## 2) Deploy Airflow + SSO (Module 01)
 
-## 2. Module 01: Airflow Deployment & Remote Logging Setup
-
-### A) Create Kubernetes Secrets
 ```bash
-# 1. Azure Entra ID Auth Secret
+kubectl apply -f 01_install/manifests/namespace.yaml
+
 kubectl -n airflow create secret generic airflow-entra-auth \
   --from-literal=AZURE_TENANT_ID='<tenant-id>' \
   --from-literal=AZURE_CLIENT_ID='<client-id>' \
   --from-literal=AZURE_CLIENT_SECRET='<client-secret>'
 
-# 2. Azure Blob Remote Logging Secret (Access Key JSON Format - Recommended)
-kubectl -n airflow create secret generic airflow-azure-storage \
-  --from-literal=AIRFLOW_CONN_WASB_DEFAULT='{"conn_type": "wasb", "login": "airflowworkshoplogs", "password": "<YOUR_STORAGE_ACCOUNT_KEY>"}'
-```
-
-### B) Deploy Airflow with Helm
-```bash
 helm upgrade --install airflow apache-airflow/airflow \
   -n airflow \
   -f 01_install/values-airflow.yaml
 ```
 
-### C) Verify Core Pods & LoadBalancer
+Verify:
+
 ```bash
 kubectl get pods -n airflow
 kubectl get svc -n airflow
 ```
 
-**Expected Results:**
-- `airflow-webserver-xxx`: Running & Ready (`1/1`)
-- `airflow-scheduler-xxx`: Running & Ready (`1/1` or `2/2` with git-sync)
-- `airflow-postgresql-0`: Running & Ready (`1/1`)
-- `airflow-webserver` Service: Type `LoadBalancer` with an assigned `EXTERNAL-IP`
+Open Airflow at:
+- `http://<airflow-webserver-loadbalancer-ip>:8080`
 
----
+SSO callback check:
+- `/oauth-authorized`
 
-## 3. Module 02: IoT Telemetry Workload Checks
+## 3) Deploy ETL stack (Module 02)
 
-Deploy the PostgreSQL target database, Flask API backend, and dashboard:
 ```bash
-kubectl apply -n airflow -f 02_usecase_etl/k8s/
+kubectl apply -n airflow -f 02_usecase_etl/k8s/postgres-configmap.yaml
+kubectl apply -n airflow -f 02_usecase_etl/k8s/postgres-statefulset.yaml
+kubectl apply -n airflow -f 02_usecase_etl/k8s/postgres-service.yaml
+kubectl apply -n airflow -f 02_usecase_etl/k8s/iot-api-deployment.yaml
+kubectl apply -n airflow -f 02_usecase_etl/k8s/iot-api-service.yaml
+kubectl apply -n airflow -f 02_usecase_etl/k8s/dashboard-deployment.yaml
+kubectl apply -n airflow -f 02_usecase_etl/k8s/dashboard-service.yaml
 ```
 
-Verify workload health:
-```bash
-kubectl get pods -n airflow -l 'app in (iot-telemetry-db, iot-api, airflow-dashboard)'
-kubectl get svc -n airflow | grep -E "iot-api|airflow-dashboard|iot-telemetry-db"
-```
+## 4) Start workshop port-forwards
 
-Start local port-forwarding tunnels (in separate terminal windows):
+Run in separate terminals:
+
 ```bash
 kubectl port-forward -n airflow svc/airflow-dashboard 8081:80
 kubectl port-forward -n airflow svc/iot-api 5000:5000
 kubectl port-forward -n airflow svc/iot-telemetry-db 5433:5432
 ```
 
-Test API connectivity:
+Checks:
+
 ```bash
 curl -sS http://localhost:5000/api/health
-curl -sS http://localhost:5000/api/stats
 ```
 
----
+Dashboard URL:
+- `http://localhost:8081/?api=http://localhost:5000`
 
-## 4. Module 03: Git-Sync Automated DAG Retrieval Checks
+## 5) Enable DAG git-sync (Module 03)
 
-Deploy the Git-Sync overlay to enable automatic DAG synchronization:
 ```bash
 helm upgrade --install airflow apache-airflow/airflow \
   -n airflow \
@@ -104,221 +75,59 @@ helm upgrade --install airflow apache-airflow/airflow \
   -f 03_git_based_dag_retrieval/values-git-sync.yaml
 ```
 
-Verify git-sync sidecar container operations:
+## 6) DAG visibility verification
+
 ```bash
-# 1. Check git-sync container sync logs
-kubectl logs -n airflow deploy/airflow-scheduler -c git-sync --tail=50
-
-# 2. Inspect DAG files in the scheduler pod
+kubectl logs -n airflow deploy/airflow-scheduler -c git-sync --tail=100
 kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- ls -la /opt/airflow/dags
-
-# 3. Check for any DAG import errors
 kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags list-import-errors
-
-# 4. List all active DAGs registered in Airflow
 kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags list
 ```
 
----
+Expected DAGs:
+- `iot_telemetry_etl`
+- `manual_sensor_maintenance_classifier`
 
-## 5. End-to-End Live Workshop Showcase
+## 7) End-to-end run
 
-1. **Open Dashboard:** Navigate to `http://localhost:8081/?api=http://localhost:5000`
-2. **Inject Telemetry Data:**
+1. Insert anomaly data:
    ```bash
    cd 02_usecase_etl
    python add_sensor_data.py --anomaly
    ```
-   *(Observe: Dashboard "Unprocessed Readings" counter increases, raw logs show unprocessed entries)*
-3. **Trigger Pipeline:** In Airflow UI, trigger DAG `iot_telemetry_etl`
-   *(Observe: Metrics cards aggregate, chart draws temperature curves with 75°C threshold, alert cards fire)*
-4. **Trigger Maintenance Classifier:** In Airflow UI, trigger DAG `manual_sensor_maintenance_classifier`
-   *(Observe: Maintenance Queue table populates with CRITICAL/HIGH priority tickets)*
-5. **Verify Persistent Task Logs:** Click any task instance in the Airflow UI (e.g., `extract` or `transform`) $\rightarrow$ **Log View**. Even after worker pods terminate, the full execution logs remain accessible.
+2. Trigger `iot_telemetry_etl`
+3. Trigger `manual_sensor_maintenance_classifier`
+4. Validate dashboard + maintenance queue updates
 
 ---
 
-## 6. Deep Dive 1: Where Airflow Pods Read DAGs (`/opt/airflow/dags`)
+## Deep dive A — Where Airflow reads DAGs
 
-### Pod Filesystem Location
-In all standard Apache Airflow container images and Helm charts, the default directory where Airflow looks for DAG definitions is:
-
-$$\mathbf{/opt/airflow/dags}$$
-
-This is governed by the core configuration setting `AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags` (or `[core] dags_folder` in `airflow.cfg`).
-
-### How Git-Sync Mounts DAGs
-When `dags.gitSync.enabled: true` is enabled in Helm:
-1. Kubernetes attaches a shared `emptyDir` volume (`dags`) to both the `git-sync` sidecar container and the `scheduler`/`webserver` containers.
-2. The `git-sync` sidecar clones the Git repository into `/git/` inside the volume and periodically pulls updates (`wait: 30`).
-3. If `subPath` is specified in `values-git-sync.yaml`:
-   ```yaml
-   dags:
-     gitSync:
-       subPath: "k8s_version/03_git_based_dag_retrieval/dags"
-   ```
-   Kubernetes volume mounts **only that specific subdirectory** directly into `/opt/airflow/dags` in the Airflow container.
-4. **Airflow Architecture Note:** In Airflow 2.x+, the **Scheduler** reads `/opt/airflow/dags`, compiles the DAG Python code, and writes the serialized representation into the metadata database (`serialized_dag` table). The **Webserver** reads DAG structures directly from the database, ensuring high UI responsiveness without local code execution risks.
-
----
-
-## 7. Deep Dive 2: Azure Entra ID SSO & Dynamic Role Assignment
-
-### Authentication Workflow (OIDC / OAuth 2.0)
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Workshop Attendee / Admin
-    participant UI as Airflow Webserver (FAB)
-    participant Entra as Azure Entra ID (OIDC)
-    participant DB as Airflow Metadata DB
-
-    User->>UI: Navigate to Airflow UI
-    UI->>User: Display "Sign In with Azure"
-    User->>Entra: Click Sign In -> Redirect to login.microsoftonline.com
-    Entra->>User: Prompt for MFA / Credentials
-    Entra->>UI: Redirect with Auth Code / ID Token (contains email, roles, groups)
-    UI->>UI: Flask-AppBuilder (FAB) parses claims
-    alt Static Auto-Registration (Current Workshop Setup)
-        UI->>DB: Create User with default role (AUTH_USER_REGISTRATION_ROLE = "Admin")
-    else Dynamic Role Assignment (Enterprise Production)
-        UI->>UI: Match Entra 'roles' claim against AUTH_ROLES_MAPPING
-        UI->>DB: Dynamically grant Admin / Op / User / Viewer roles
-    end
-    UI->>User: Establish Authenticated Session & Render Dashboard
-```
-
-### Static Auto-Registration vs Dynamic Role Assignment
-
-#### 1. Static Auto-Registration (Workshop Mode)
-In `01_install/values-airflow.yaml`:
-```python
-AUTH_TYPE = AUTH_OAUTH
-AUTH_USER_REGISTRATION = True
-AUTH_USER_REGISTRATION_ROLE = "Admin"
-AUTH_ROLES_SYNC_AT_LOGIN = False
-```
-- Every user authenticated via Entra ID is automatically registered and assigned the `Admin` role.
-- Ideal for workshop participants where full access is needed without configuring complex Azure directory permissions.
-
-#### 2. Dynamic Role Assignment from Azure Entra ID (Enterprise Production)
-In enterprise environments, permissions must match the user's role in Azure Entra ID.
-
-**Step A: Configure App Roles in Azure Portal:**
-1. In **Azure Entra ID** > **App Registrations** > Select your Airflow App.
-2. Under **App Roles** > Create App Roles matching your team structure:
-   - `Airflow.Admin` (Allowed member types: Users/Groups)
-   - `Airflow.Op`
-   - `Airflow.User`
-   - `Airflow.Viewer`
-3. Under **Enterprise Applications** > Assign users or security groups to these App Roles.
-
-**Step B: Configure Dynamic Role Sync in `values-airflow.yaml`:**
-Update `webserver.webserverConfig`:
-```python
-AUTH_TYPE = AUTH_OAUTH
-AUTH_USER_REGISTRATION = True
-AUTH_USER_REGISTRATION_ROLE = "Public"  # Default if no roles match
-AUTH_ROLES_SYNC_AT_LOGIN = True        # <-- Dynamically update on every login
-
-AUTH_ROLES_MAPPING = {
-    "Airflow.Admin": ["Admin"],
-    "Airflow.Op": ["Op"],
-    "Airflow.User": ["User"],
-    "Airflow.Viewer": ["Viewer"],
-    # You can also map Azure AD Security Group Object IDs directly:
-    # "b3f2c5d1-1234-5678-9abc-def012345678": ["Admin"],
-}
-```
-Whenever a user logs in, FAB checks the `roles` (or `groups`) array in the Azure token, maps them against `AUTH_ROLES_MAPPING`, and updates the user's Airflow permissions dynamically.
-
----
-
-## 8. Deep Dive 3: Module 03 Troubleshooting Guide (Why DAGs Were Missing)
-
-If Module 03 is deployed but DAGs do not appear in the Airflow UI or CLI, follow this diagnostic checklist:
+Airflow scheduler reads DAG files from:
 
 ```text
-                                Diagnostic Checklist
-                                         │
-        ┌────────────────────────────────┴────────────────────────────────┐
-        ▼                                                                 ▼
-[ 1. Check Git-Sync Sidecar ]                                   [ 2. Inspect /opt/airflow/dags ]
-kubectl logs deploy/airflow-scheduler -c git-sync               kubectl exec deploy/airflow-scheduler -c scheduler -- ls -la /opt/airflow/dags
-  - Clone failed? -> Check repo URL & SSH secret                  - Empty? -> subPath mismatch in values-git-sync.yaml
-  - Rate limited? -> Increase sync wait interval                  - Files present? -> Proceed to step 3
-        │                                                                 │
-        └────────────────────────────────┬────────────────────────────────┘
-                                         ▼
-                        [ 3. Check DAG Import Errors ]
-                        kubectl exec deploy/airflow-scheduler -c scheduler -- airflow dags list-import-errors
-                          - Syntax/Import error? -> Fix Python code/provider dependencies
-                          - No errors & files exist? -> Wait 30s for scheduler parsing loop
+/opt/airflow/dags
 ```
 
-### Diagnostic Command Reference
+Quick check:
 
-| Check | Command | Healthy Indicator |
-| :--- | :--- | :--- |
-| **Git-Sync Logs** | `kubectl logs -n airflow deploy/airflow-scheduler -c git-sync --tail=50` | `level=info msg="sync complete"` |
-| **Pod DAG Folder** | `kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- ls -la /opt/airflow/dags` | Lists `minimal_etl.py` and `manual_sensor_cleaning_dag.py` |
-| **DAG Import Errors** | `kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags list-import-errors` | `No data found` |
-| **Registered DAGs** | `kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags list` | Lists `iot_telemetry_etl` and `manual_sensor_maintenance_classifier` |
-
----
-
-## 9. Deep Dive 4: Persistent Remote Logging with Azure Blob Storage (WASB)
-
-### Why Local Worker Logs Disappear
-When using `KubernetesExecutor`, each Airflow task executes in a dedicated, dynamic worker pod (e.g. `iot-telemetry-etl-extract-xxxx`).
-- When the task completes or errors out, Kubernetes transitions the pod to `Completed` / `Error` and subsequently deletes it.
-- If `logs.persistence.enabled: false`, the local pod logs are destroyed along with the ephemeral container.
-- When viewing task logs in the Airflow UI afterwards, the webserver fails to find the log files locally, resulting in missing execution context.
-
-### Remote Logging Architecture Flow
-
-```mermaid
-graph LR
-    subgraph AKS Cluster
-        Worker[Dynamic Worker Pod] -->|Stream task execution logs| BlobStore[Azure Blob Storage: airflowworkshoplogs]
-        Scheduler[Airflow Scheduler] -->|Monitor state| Worker
-        Webserver[Airflow Webserver] -->|Fetch remote log via wasb_default| BlobStore
-    end
-    subgraph Browser
-        User[Presenter / Engineer] -->|View Task Log in UI| Webserver
-    end
+```bash
+kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- ls -la /opt/airflow/dags
 ```
 
-### Configuration Breakdown in `values-airflow.yaml`
+If this path is empty, DAGs will not appear in UI/CLI.
 
-```yaml
-config:
-  logging:
-    remote_logging: "True"
-    remote_log_conn_id: "wasb_default"
-    remote_base_log_folder: "wasb://airflow-logs" # Maps to 'airflow-logs' container in Blob Storage
-    delete_local_logs: "False"
+## Deep dive B — Entra SSO role behavior in this workshop
 
-extraEnv: |
-  - name: AIRFLOW_CONN_WASB_DEFAULT
-    valueFrom:
-      secretKeyRef:
-        name: airflow-azure-storage
-        key: AIRFLOW_CONN_WASB_DEFAULT
-```
+Current configured behavior (`01_install/values-airflow.yaml`):
 
-### Log Path Structure in Azure Blob Container
-Airflow structures remote task logs hierarchically inside the `airflow-logs` container:
-```text
-airflow-logs/
-└── dag_id=iot_telemetry_etl/
-    └── run_id=scheduled__2026-08-25T08:00:00+00:00/
-        ├── task_id=extract/
-        │   └── attempt=1.log
-        ├── task_id=transform/
-        │   └── attempt=1.log
-        └── task_id=load/
-            └── attempt=1.log
-```
-This guarantees log retention and debugging capability across the entire DAG execution lifecycle without maintaining costly `ReadWriteMany` persistent disk volumes.
+- `AUTH_USER_REGISTRATION = True`
+- `AUTH_USER_REGISTRATION_ROLE = "Admin"`
+- `AUTH_ROLES_SYNC_AT_LOGIN = False`
+
+Meaning:
+- Entra-authenticated users are auto-created in Airflow
+- They get `Admin` role by default
+- Dynamic per-login role mapping is currently disabled
+
+If you want dynamic mapping later, enable `AUTH_ROLES_SYNC_AT_LOGIN = True` and define `AUTH_ROLES_MAPPING`.
