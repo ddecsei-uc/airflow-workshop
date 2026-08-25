@@ -52,9 +52,19 @@ dags:
   persistence:
     enabled: false
 
+# Airflow Core Config: Enable Azure Blob Remote Logging
+config:
+  logging:
+    remote_logging: "True"
+    remote_log_conn_id: "wasb_default"
+    remote_base_log_folder: "wasb://airflow-logs"
+    delete_local_logs: "False"
+  azure_remote_logging:
+    remote_wasb_log_container: "airflow-logs"
+
 logs:
   persistence:
-    enabled: false
+    enabled: false # Disabled in favor of cloud-native Azure Blob Storage remote logging
 
 postgresql:
   enabled: true
@@ -85,3 +95,8 @@ extraEnv: |
     value: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
   - name: AIRFLOW_CONN_IOT_DB_CONN
     value: postgresql://iot_user:iot_password@iot-telemetry-db.airflow.svc.cluster.local:5432/iot_telemetry
+  - name: AIRFLOW_CONN_WASB_DEFAULT
+    valueFrom:
+      secretKeyRef:
+        name: airflow-azure-storage
+        key: AIRFLOW_CONN_WASB_DEFAULT

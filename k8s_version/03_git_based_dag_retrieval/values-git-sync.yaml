@@ -17,14 +17,10 @@ dags:
     depth: 1
     wait: 30 # Sync interval in seconds (checks repo for changes every 30s)
 
-    # CRITICAL: subPath defines the relative directory within the git repo where .py DAGs reside.
-    # If subPath is empty (""), Airflow will look in the root of the cloned repo.
-    # When your DAGs are nested in a subfolder, set subPath accordingly:
-    subPath: "airflow/k8s_version/03_git_based_dag_retrieval/dags"
-
-    # Alternative subPath examples depending on repo root structure:
-    # subPath: "03_git_based_dag_retrieval/dags"
-    # subPath: "dags"
+    # CRITICAL: subPath is RELATIVE TO THE ROOT of the cloned git repository.
+    # In https://github.com/DecseiD/airflow-workshop.git, the repo root contains k8s_version/ directly.
+    # (Do NOT include repo name or leading slashes).
+    subPath: "k8s_version/03_git_based_dag_retrieval/dags"
 
     # For private repos, configure authentication secret:
     # credentialsSecret: airflow-git-https

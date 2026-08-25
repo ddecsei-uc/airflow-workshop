@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Git-Sync SubPath Configuration**: Added `subPath: "airflow/k8s_version/03_git_based_dag_retrieval/dags"` and sync polling interval (`wait: 30`) to `k8s_version/03_git_based_dag_retrieval/values-git-sync.yaml` so Airflow scheduler correctly parses DAGs within repository subdirectories.
 - **Pod DAG Location Deep Dive**: Added technical documentation to `k8s_version/walkthrough.md` explaining `/opt/airflow/dags` filesystem path, shared `emptyDir` volume mounting, and scheduler database serialization (`serialized_dag`).
 - **Azure Entra ID Dynamic RBAC Guide**: Added OIDC token exchange sequence diagrams and configuration reference (`AUTH_ROLES_SYNC_AT_LOGIN = True` + `AUTH_ROLES_MAPPING` with Azure App Roles / Security Groups) in `k8s_version/walkthrough.md`.
+- **Azure Blob Remote Logging**: Enabled persistent task logging via Azure Blob Storage (`wasb_default` / `airflow-logs` container) in `k8s_version/01_install/values-airflow.yaml` so worker logs remain accessible in the UI after ephemeral Kubernetes pods terminate.
 - **Module 03 Diagnostic Playbook**: Added CLI commands for git-sync log inspection, `/opt/airflow/dags` directory verification, DAG import error checking, and DAG list validation.
 
 ### Changed

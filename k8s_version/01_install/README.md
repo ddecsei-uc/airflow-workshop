@@ -1,25 +1,54 @@
-# 01_install — Airflow on AKS + Azure Entra ID SSO
+# 01_install — Airflow on AKS + Azure Entra ID SSO + Azure Blob Remote Logging
 
-This module deploys Airflow on an existing AKS cluster with Helm and enables Azure Entra ID (OIDC/OAuth) login for the Airflow UI.
+This module deploys Airflow on an existing AKS cluster with Helm, enables Azure Entra ID (OIDC/OAuth) Single Sign-On, and configures **persistent remote task logging via Azure Blob Storage**.
+
+---
 
 ## Prerequisites
 
 - Existing AKS cluster and working `kubectl` context
 - Helm v3
-- Azure Entra app registration for Airflow UI login
+- Azure Entra ID app registration for Airflow UI login
+- Azure Storage Account (`airflowworkshoplogs`) with a Blob Container named `airflow-logs`
 
-## 1) Create namespace + secrets
+---
 
+## 1) Create Namespace & Secrets
+
+### A) Create Namespace
 ```bash
 kubectl apply -f manifests/namespace.yaml
+```
 
+### B) Create Azure Entra ID Auth Secret
+```bash
 kubectl -n airflow create secret generic airflow-entra-auth \
   --from-literal=AZURE_TENANT_ID='<tenant-id>' \
   --from-literal=AZURE_CLIENT_ID='<client-id>' \
   --from-literal=AZURE_CLIENT_SECRET='<client-secret>'
 ```
 
-## 2) Add Helm repo and deploy Airflow
+### C) Create Azure Blob Remote Logging Secret
+
+#### Option A: Storage Account Access Key (Recommended & Most Reliable)
+Copy **Key 1** from Azure Portal $\rightarrow$ Storage account `airflowworkshoplogs` $\rightarrow$ **Access keys**:
+
+```bash
+kubectl -n airflow create secret generic airflow-azure-storage \
+  --from-literal=AIRFLOW_CONN_WASB_DEFAULT='{"conn_type": "wasb", "login": "airflowworkshoplogs", "password": "<YOUR_STORAGE_ACCOUNT_KEY>"}'
+```
+
+#### Option B: Account-Level SAS Token (JSON Format)
+```bash
+kubectl -n airflow create secret generic airflow-azure-storage \
+  --from-literal=AIRFLOW_CONN_WASB_DEFAULT='{"conn_type": "wasb", "login": "airflowworkshoplogs", "extra": {"sas_token": "<YOUR_SAS_TOKEN>"}}'
+```
+
+> **Note:** Always use Airflow's **JSON connection format** so special characters (`&`, `=`, `%`) are preserved without URL-encoding corruption.
+
+---
+
+## 2) Add Helm Repo and Deploy Airflow
 
 ```bash
 helm repo add apache-airflow https://airflow.apache.org
@@ -30,48 +59,33 @@ helm upgrade --install airflow apache-airflow/airflow \
   -f values-airflow.yaml
 ```
 
-Notes:
-- This module is pinned to Airflow image/version `2.11.0` in `values-airflow.yaml`.
-- `extraEnv` is intentionally defined as a templated block (`extraEnv: |`) to satisfy chart schema validation while still using Secret `valueFrom` refs.
+---
 
-## 3) Validate pods + LoadBalancer access
+## 3) Validate Pods & LoadBalancer Access
 
 ```bash
 kubectl get pods -n airflow
 kubectl get svc -n airflow
 ```
 
-Expected:
+**Expected:**
 - `airflow-webserver` service type is `LoadBalancer`.
-- `EXTERNAL-IP` is assigned (workshop access path).
+- `EXTERNAL-IP` is assigned for workshop access.
 
-## 4) Azure Entra ID redirect URI
+---
+
+## 4) Azure Entra ID Redirect URI
 
 Configure your Entra app redirect URI to:
 
 ```text
-http://localhost:8080/oauth-authorized
+http://<loadbalancer-external-ip>:8080/oauth-authorized
 ```
 
-Examples:
-- `http://<loadbalancer-external-ip>:8080/oauth-authorized`
+---
 
-This follows the official FAB SSO guide for Airflow provider auth manager.
+## 5) Cloud-Native Architecture & Remote Logging Highlights
 
-## 5) Airflow connection for ETL DB
-
-After Module 02 DB is deployed, set connection env via Helm values (already included):
-
-- `AIRFLOW_CONN_IOT_DB_CONN=postgresql://iot_user:***@iot-telemetry-db.airflow.svc.cluster.local:5432/iot_telemetry`
-
-If you change service name/namespace, update this URI.
-
-## 6) Working fixes already reflected in `values-airflow.yaml`
-
-Based on live troubleshooting results, this module now includes:
-- `defaultAirflowTag` and `airflowVersion` bumped to `2.11.0`.
-- `logs.persistence.enabled: false` (avoids RWX/RWO storage conflict in workshop AKS setups).
-- `webserver.service.type: LoadBalancer` (quick workshop reachability path).
-- OIDC auto-discovery via `server_metadata_url` for Entra provider config.
-- `AUTH_ROLES_SYNC_AT_LOGIN = False` to avoid login-time role sync issues observed in the workshop path.
-- Ensure Entra app token configuration includes email claim for FAB user identity mapping.
+- **Dynamic Task Logging with Zero Pod Locking:** When task worker pods spawn and complete under `KubernetesExecutor`, they stream logs directly into Azure Blob Storage (`airflow-logs` container).
+- **Persistent UI Log View:** The Airflow Webserver fetches task logs directly from Azure Blob Storage via `wasb_default`, allowing debugging even after the ephemeral worker pod has been deleted by Kubernetes.
+- **No Shared RWX Volumes Needed:** Bypasses Kubernetes `ReadWriteMany` PVC limitations and IOPS throttling on Azure Files.

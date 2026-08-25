@@ -108,12 +108,11 @@ manual_sensor_maintenance_classifier | /opt/airflow/dags/manual_...  | airflow |
 If you deployed Module 03 and no DAGs appeared in the UI or CLI, the most common causes and fixes are:
 
 ### Root Cause 1: Missing or Incorrect `subPath` in Helm Values (Most Common)
-- **Problem:** If `dags.gitSync.subPath` is empty (`""`), `git-sync` clones the repository root into `/opt/airflow/dags`. If your DAG `.py` files reside in a subfolder (such as `airflow/k8s_version/03_git_based_dag_retrieval/dags`), Airflow scans only the root directory, finding zero DAGs.
-- **Fix:** In `values-git-sync.yaml`, ensure `subPath` points exactly to the directory holding your DAG files:
+- **Problem:** In https://github.com/DecseiD/airflow-workshop.git, the repository root contains `k8s_version/` directly. If `subPath` is empty (`""`) or incorrectly includes repo prefixes (e.g. `airflow/` or `airflow-workshop/`), Airflow looks for non-existent folders and mounts an empty directory at `/opt/airflow/dags`.
+- **Fix:** In `values-git-sync.yaml`, configure `subPath` exactly relative to the repo root:
   ```yaml
-  subPath: "airflow/k8s_version/03_git_based_dag_retrieval/dags"
+  subPath: "k8s_version/03_git_based_dag_retrieval/dags"
   ```
-  *(Or `"03_git_based_dag_retrieval/dags"` if your repo root begins at the workshop folder level).*
 
 ### Root Cause 2: Git-Sync Clone Authentication / Network Failure
 - **Problem:** The `git-sync` sidecar is failing to pull from the remote repository (e.g. private repo without SSH secret, wrong branch name, rate limit).

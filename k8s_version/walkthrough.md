@@ -7,13 +7,14 @@ This runbook provides the step-by-step verification commands, architectural deep
 ## 📋 Table of Contents
 
 1. [Cluster Context & Namespace Verification](#1-cluster-context--namespace-verification)
-2. [Module 01: Airflow Deployment & Ingress Checks](#2-module-01-airflow-deployment--ingress-checks)
+2. [Module 01: Airflow Deployment & Remote Logging Setup](#2-module-01-airflow-deployment--remote-logging-setup)
 3. [Module 02: IoT Telemetry Workload Checks](#3-module-02-iot-telemetry-workload-checks)
 4. [Module 03: Git-Sync Automated DAG Retrieval Checks](#4-module-03-git-sync-automated-dag-retrieval-checks)
 5. [End-to-End Live Workshop Showcase](#5-end-to-end-live-workshop-showcase)
 6. [Deep Dive 1: Where Airflow Pods Read DAGs (`/opt/airflow/dags`)](#6-deep-dive-1-where-airflow-pods-read-dags-optairflowdags)
 7. [Deep Dive 2: Azure Entra ID SSO & Dynamic Role Assignment](#7-deep-dive-2-azure-entra-id-sso--dynamic-role-assignment)
 8. [Deep Dive 3: Module 03 Troubleshooting Guide (Why DAGs Were Missing)](#8-deep-dive-3-module-03-troubleshooting-guide-why-dags-were-missing)
+9. [Deep Dive 4: Persistent Remote Logging with Azure Blob Storage (WASB)](#9-deep-dive-4-persistent-remote-logging-with-azure-blob-storage-wasb)
 
 ---
 
@@ -29,16 +30,29 @@ kubectl get ns airflow
 
 ---
 
-## 2. Module 01: Airflow Deployment & Ingress Checks
+## 2. Module 01: Airflow Deployment & Remote Logging Setup
 
-Deploy Airflow via Helm:
+### A) Create Kubernetes Secrets
+```bash
+# 1. Azure Entra ID Auth Secret
+kubectl -n airflow create secret generic airflow-entra-auth \
+  --from-literal=AZURE_TENANT_ID='<tenant-id>' \
+  --from-literal=AZURE_CLIENT_ID='<client-id>' \
+  --from-literal=AZURE_CLIENT_SECRET='<client-secret>'
+
+# 2. Azure Blob Remote Logging Secret (Access Key JSON Format - Recommended)
+kubectl -n airflow create secret generic airflow-azure-storage \
+  --from-literal=AIRFLOW_CONN_WASB_DEFAULT='{"conn_type": "wasb", "login": "airflowworkshoplogs", "password": "<YOUR_STORAGE_ACCOUNT_KEY>"}'
+```
+
+### B) Deploy Airflow with Helm
 ```bash
 helm upgrade --install airflow apache-airflow/airflow \
   -n airflow \
   -f 01_install/values-airflow.yaml
 ```
 
-Verify Airflow core pods and services:
+### C) Verify Core Pods & LoadBalancer
 ```bash
 kubectl get pods -n airflow
 kubectl get svc -n airflow
@@ -120,6 +134,7 @@ kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags li
    *(Observe: Metrics cards aggregate, chart draws temperature curves with 75°C threshold, alert cards fire)*
 4. **Trigger Maintenance Classifier:** In Airflow UI, trigger DAG `manual_sensor_maintenance_classifier`
    *(Observe: Maintenance Queue table populates with CRITICAL/HIGH priority tickets)*
+5. **Verify Persistent Task Logs:** Click any task instance in the Airflow UI (e.g., `extract` or `transform`) $\rightarrow$ **Log View**. Even after worker pods terminate, the full execution logs remain accessible.
 
 ---
 
@@ -140,7 +155,7 @@ When `dags.gitSync.enabled: true` is enabled in Helm:
    ```yaml
    dags:
      gitSync:
-       subPath: "airflow/k8s_version/03_git_based_dag_retrieval/dags"
+       subPath: "k8s_version/03_git_based_dag_retrieval/dags"
    ```
    Kubernetes volume mounts **only that specific subdirectory** directly into `/opt/airflow/dags` in the Airflow container.
 4. **Airflow Architecture Note:** In Airflow 2.x+, the **Scheduler** reads `/opt/airflow/dags`, compiles the DAG Python code, and writes the serialized representation into the metadata database (`serialized_dag` table). The **Webserver** reads DAG structures directly from the database, ensuring high UI responsiveness without local code execution risks.
@@ -250,3 +265,60 @@ kubectl logs deploy/airflow-scheduler -c git-sync               kubectl exec dep
 | **Pod DAG Folder** | `kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- ls -la /opt/airflow/dags` | Lists `minimal_etl.py` and `manual_sensor_cleaning_dag.py` |
 | **DAG Import Errors** | `kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags list-import-errors` | `No data found` |
 | **Registered DAGs** | `kubectl exec -n airflow deploy/airflow-scheduler -c scheduler -- airflow dags list` | Lists `iot_telemetry_etl` and `manual_sensor_maintenance_classifier` |
+
+---
+
+## 9. Deep Dive 4: Persistent Remote Logging with Azure Blob Storage (WASB)
+
+### Why Local Worker Logs Disappear
+When using `KubernetesExecutor`, each Airflow task executes in a dedicated, dynamic worker pod (e.g. `iot-telemetry-etl-extract-xxxx`).
+- When the task completes or errors out, Kubernetes transitions the pod to `Completed` / `Error` and subsequently deletes it.
+- If `logs.persistence.enabled: false`, the local pod logs are destroyed along with the ephemeral container.
+- When viewing task logs in the Airflow UI afterwards, the webserver fails to find the log files locally, resulting in missing execution context.
+
+### Remote Logging Architecture Flow
+
+```mermaid
+graph LR
+    subgraph AKS Cluster
+        Worker[Dynamic Worker Pod] -->|Stream task execution logs| BlobStore[Azure Blob Storage: airflowworkshoplogs]
+        Scheduler[Airflow Scheduler] -->|Monitor state| Worker
+        Webserver[Airflow Webserver] -->|Fetch remote log via wasb_default| BlobStore
+    end
+    subgraph Browser
+        User[Presenter / Engineer] -->|View Task Log in UI| Webserver
+    end
+```
+
+### Configuration Breakdown in `values-airflow.yaml`
+
+```yaml
+config:
+  logging:
+    remote_logging: "True"
+    remote_log_conn_id: "wasb_default"
+    remote_base_log_folder: "wasb://airflow-logs" # Maps to 'airflow-logs' container in Blob Storage
+    delete_local_logs: "False"
+
+extraEnv: |
+  - name: AIRFLOW_CONN_WASB_DEFAULT
+    valueFrom:
+      secretKeyRef:
+        name: airflow-azure-storage
+        key: AIRFLOW_CONN_WASB_DEFAULT
+```
+
+### Log Path Structure in Azure Blob Container
+Airflow structures remote task logs hierarchically inside the `airflow-logs` container:
+```text
+airflow-logs/
+└── dag_id=iot_telemetry_etl/
+    └── run_id=scheduled__2026-08-25T08:00:00+00:00/
+        ├── task_id=extract/
+        │   └── attempt=1.log
+        ├── task_id=transform/
+        │   └── attempt=1.log
+        └── task_id=load/
+            └── attempt=1.log
+```
+This guarantees log retention and debugging capability across the entire DAG execution lifecycle without maintaining costly `ReadWriteMany` persistent disk volumes.
